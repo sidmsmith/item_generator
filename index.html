@@ -361,6 +361,7 @@
       const copy = JSON.parse(JSON.stringify(pkgs[idx]));
       cleanItemData(copy);
       copy.ProfileId = profileIdFromOrg(org);
+      copy.Standard = false;
       return copy;
     }
 
