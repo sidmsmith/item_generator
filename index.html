@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Item Copy v1.0.3</title>
+  <title>Item Copy v1.0.4</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -326,6 +326,7 @@
       summaryDescription.value = item.Description || item.description || item.ShortDescription || '';
     }
 
+    /** Minimal package used only when the item has no packages yet. */
     function defaultPackage(org) {
       return {
         ProfileId: profileIdFromOrg(org),
@@ -340,13 +341,27 @@
         DimensionUomId: 'in',
         Volume: 1,
         VolumeUomId: 'cuin',
-        Standard: true,
+        Standard: false,
         ValidSlottingDemandUom: false,
         ValidSlottingStorageUom: false,
         UseFluidSlotting: false,
         IsPhysicalPallet: false,
         MaxLanes: 0,
       };
+    }
+
+    /** Deep-clone an existing package (all fields) for Add Package. */
+    function clonePackageForAdd(org, sourceIndex) {
+      const pkgs = getPackages();
+      if (!pkgs.length) return defaultPackage(org);
+      const idx =
+        sourceIndex != null && sourceIndex >= 0 && sourceIndex < pkgs.length
+          ? sourceIndex
+          : pkgs.length - 1;
+      const copy = JSON.parse(JSON.stringify(pkgs[idx]));
+      cleanItemData(copy);
+      copy.ProfileId = profileIdFromOrg(org);
+      return copy;
     }
 
     function getPackages() {
@@ -439,7 +454,7 @@
         btn.onclick = () => {
           syncPackagesFromAccordion();
           const idx = parseInt(btn.dataset.pkgIndex, 10);
-          getPackages().splice(idx + 1, 0, defaultPackage(getOrg()));
+          getPackages().splice(idx + 1, 0, clonePackageForAdd(getOrg(), idx));
           populatePackages();
           syncUiToCurrentItem();
         };
@@ -674,7 +689,8 @@
     document.getElementById('addPackageTopBtn').addEventListener('click', () => {
       if (!currentItemData) return;
       syncPackagesFromAccordion();
-      getPackages().push(defaultPackage(getOrg()));
+      const pkgs = getPackages();
+      getPackages().push(clonePackageForAdd(getOrg(), pkgs.length > 0 ? pkgs.length - 1 : null));
       populatePackages();
       syncUiToCurrentItem();
     });
