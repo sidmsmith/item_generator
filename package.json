@@ -1,0 +1,17 @@
+{
+  "name": "item_generator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0"
+  },
+  "description": "Item Copy - Copy and Create Item Master records",
+  "main": "server.js",
+  "license": "ISC",
+  "type": "commonjs"
+}
