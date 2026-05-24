@@ -21,10 +21,18 @@ CLIENT_SECRET = os.getenv("MANHATTAN_SECRET")
 USAGE_INGEST_URL = os.getenv("MANHATTAN_USAGE_INGEST_URL", "").strip()
 USAGE_INGEST_SECRET = os.getenv("MANHATTAN_USAGE_INGEST_SECRET", "").strip()
 APP_NAME = "item-generator-app"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
-if not PASSWORD or not CLIENT_SECRET:
-    raise Exception("Missing MANHATTAN_PASSWORD or MANHATTAN_SECRET environment variables")
+
+@app.before_request
+def log_request():
+    print(f"[REQ] {request.method} {request.path}")
+
+
+def _missing_secrets_error():
+    if not PASSWORD or not CLIENT_SECRET:
+        return "Server misconfigured: MANHATTAN_PASSWORD and MANHATTAN_SECRET must be set in Vercel"
+    return None
 
 
 def forward_usage_event(payload):
@@ -100,6 +108,10 @@ def app_opened():
 
 @app.route("/api/auth", methods=["POST"])
 def auth():
+    config_err = _missing_secrets_error()
+    if config_err:
+        print(f"[AUTH] {config_err}")
+        return jsonify({"success": False, "error": config_err}), 500
     org = request.json.get("org", "").strip()
     if not org:
         return jsonify({"success": False, "error": "ORG required"})
