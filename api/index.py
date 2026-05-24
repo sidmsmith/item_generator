@@ -1,5 +1,5 @@
 # api/index.py
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 import json
 import os
 import requests
@@ -21,12 +21,11 @@ CLIENT_SECRET = os.getenv("MANHATTAN_SECRET")
 USAGE_INGEST_URL = os.getenv("MANHATTAN_USAGE_INGEST_URL", "").strip()
 USAGE_INGEST_SECRET = os.getenv("MANHATTAN_USAGE_INGEST_SECRET", "").strip()
 APP_NAME = "item-generator-app"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 
-@app.before_request
-def log_request():
-    print(f"[REQ] {request.method} {request.path}")
+def _json_body():
+    return request.get_json(silent=True) or {}
 
 
 def _missing_secrets_error():
@@ -112,7 +111,7 @@ def auth():
     if config_err:
         print(f"[AUTH] {config_err}")
         return jsonify({"success": False, "error": config_err}), 500
-    org = request.json.get("org", "").strip()
+    org = _json_body().get("org", "").strip()
     if not org:
         return jsonify({"success": False, "error": "ORG required"})
     print(f"[AUTH] Authenticating for ORG: {org}")
@@ -126,7 +125,7 @@ def auth():
 
 @app.route("/api/find_item", methods=["POST"])
 def find_item():
-    data = request.json
+    data = _json_body()
     org = data.get("org", "").strip()
     token = data.get("token", "").strip()
     item_id = data.get("itemId", "").strip()
@@ -189,7 +188,7 @@ def find_item():
 
 @app.route("/api/create_item", methods=["POST"])
 def create_item():
-    data = request.json
+    data = _json_body()
     org = data.get("org", "").strip()
     token = data.get("token", "").strip()
     item_data = data.get("itemData")
@@ -243,7 +242,7 @@ def create_item():
 
 @app.route("/api/usage-track", methods=["POST"])
 def usage_track():
-    data = request.json or {}
+    data = _json_body()
     event_name = data.get("event_name")
     metadata = data.get("metadata", {})
     payload = {
@@ -255,12 +254,6 @@ def usage_track():
     }
     forward_usage_event(payload)
     return jsonify({"success": True})
-
-
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_static(path):
-    return send_from_directory(os.path.dirname(os.path.dirname(__file__)), "index.html")
 
 
 if __name__ == "__main__":
