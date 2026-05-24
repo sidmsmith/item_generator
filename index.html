@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Item Copy v1.0.2</title>
+  <title>Item Copy v1.0.3</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -62,6 +62,9 @@
       padding: 0.25rem 0.75rem; font-size: 0.85rem; cursor: pointer;
     }
     .json-toggle-btn:hover { border-color: var(--primary); color: #fff; }
+    .package-row .form-check-label { color: #fff; }
+    .package-row .form-check-input { border-color: #888; }
+    .package-row .form-check-input:checked { background-color: var(--success); border-color: var(--success); }
   </style>
 </head>
 <body>
@@ -85,7 +88,7 @@
       <div class="mb-3">
         <label class="form-label">Sample Item ID:</label>
         <input type="text" id="sampleItemIdInput" class="form-control" placeholder="Enter item ID to copy" />
-        <small>Load an existing item to copy its configuration</small>
+        <small>Press Enter or click Load Item to copy an existing item</small>
       </div>
 
       <div class="mb-3 d-flex align-items-center gap-3">
@@ -283,6 +286,14 @@
       });
     }
 
+    /** Push summary + package accordion edits into currentItemData and refresh JSON editor. */
+    function syncUiToCurrentItem() {
+      if (!currentItemData) return;
+      syncPackagesFromAccordion();
+      syncSummaryToItem(currentItemData);
+      refreshJsonEditor();
+    }
+
     function refreshJsonEditor() {
       if (!jsonEditor || !currentItemData) return;
       jsonEditor.setValue(JSON.stringify(currentItemData, null, 2));
@@ -430,7 +441,7 @@
           const idx = parseInt(btn.dataset.pkgIndex, 10);
           getPackages().splice(idx + 1, 0, defaultPackage(getOrg()));
           populatePackages();
-          refreshJsonEditor();
+          syncUiToCurrentItem();
         };
       });
       packagesAccordion.querySelectorAll('.remove-pkg').forEach(btn => {
@@ -439,28 +450,28 @@
           const idx = parseInt(btn.dataset.pkgIndex, 10);
           getPackages().splice(idx, 1);
           populatePackages();
-          refreshJsonEditor();
+          syncUiToCurrentItem();
         };
       });
       packagesAccordion.querySelectorAll('[data-field]').forEach(inp => {
-        inp.addEventListener('change', () => {
-          syncPackagesFromAccordion();
-          refreshJsonEditor();
-        });
+        const onEdit = () => syncUiToCurrentItem();
+        inp.addEventListener('input', onEdit);
+        inp.addEventListener('change', onEdit);
       });
     }
 
     function buildItemPayloadForSave() {
+      if (!currentItemData) throw new Error('No item data loaded');
       syncPackagesFromAccordion();
+      syncSummaryToItem(currentItemData);
       let item;
       if (jsonEditorSection.style.display !== 'none' && jsonEditor) {
         item = parseJsonEditor();
-      } else if (currentItemData) {
-        item = JSON.parse(JSON.stringify(currentItemData));
+        syncSummaryToItem(item);
+        item.ItemPackage = JSON.parse(JSON.stringify(currentItemData.ItemPackage || []));
       } else {
-        throw new Error('No item data loaded');
+        item = JSON.parse(JSON.stringify(currentItemData));
       }
-      syncSummaryToItem(item);
       const org = getOrg();
       applyProfileId(item, org);
       cleanItemData(item);
@@ -653,37 +664,36 @@
       }
     });
     loadItemBtn.addEventListener('click', loadItem);
+    sampleItemIdInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadItem();
+      }
+    });
     createItemBtn.addEventListener('click', createItem);
     document.getElementById('addPackageTopBtn').addEventListener('click', () => {
       if (!currentItemData) return;
       syncPackagesFromAccordion();
       getPackages().push(defaultPackage(getOrg()));
       populatePackages();
-      refreshJsonEditor();
+      syncUiToCurrentItem();
     });
 
-    summaryItemId.addEventListener('input', () => {
-      if (currentItemData) {
-        syncSummaryToItem(currentItemData);
-        refreshJsonEditor();
-      }
-    });
-    summaryDescription.addEventListener('input', () => {
-      if (currentItemData) {
-        syncSummaryToItem(currentItemData);
-        refreshJsonEditor();
-      }
-    });
+    summaryItemId.addEventListener('input', () => syncUiToCurrentItem());
+    summaryDescription.addEventListener('input', () => syncUiToCurrentItem());
 
     jsonToggleBtn.addEventListener('click', () => {
       const show = jsonEditorSection.style.display === 'none';
-      jsonEditorSection.style.display = show ? 'block' : 'none';
-      if (show && jsonEditor) {
+      if (!show && jsonEditor) {
         try {
           currentItemData = parseJsonEditor();
-        } catch (_) {
-          /* keep current */
+        } catch (e) {
+          logToConsole('JSON parse error (keeping accordion data): ' + e.message, 'error');
         }
+      }
+      jsonEditorSection.style.display = show ? 'block' : 'none';
+      if (show && jsonEditor) {
+        syncUiToCurrentItem();
         jsonEditor.refresh();
       }
     });
