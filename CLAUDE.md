@@ -5,7 +5,7 @@ The notes below cover only what's specific to this repository.
 
 ## Version identifiers
 
-Three places, in sync at `v1.0.6`:
+Three places, in sync at `v1.0.7`:
 
 - `package.json` — the `version` field
 - `index.html` — the `<title>`
