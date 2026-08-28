@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Item Copy v1.0.5</title>
+  <title>Item Copy v1.0.6</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -72,16 +72,24 @@
     <h2 class="text-center mb-4">Item Copy</h2>
 
     <div id="orgSection" class="mb-3">
-      <label class="form-label">ORG:</label>
-      <div class="d-flex align-items-center gap-2">
-        <input type="text" id="org" class="form-control" placeholder="Enter ORG" maxlength="20" style="width: 250px;" />
+      <div class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label">Environment:</label>
+          <select id="environment" class="form-select" style="width: 160px;">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Username:</label>
+          <input type="text" id="username" class="form-control" placeholder="e.g. demoweb@SS-DEMO" style="width: 260px; max-width: 100%;" />
+        </div>
         <button id="authBtn" class="btn btn-success px-4">Authenticate</button>
       </div>
       <small>Press Enter to authenticate</small>
     </div>
 
     <div class="status-bar">
-      <div class="status" id="status">Enter ORG and press Enter to authenticate</div>
+      <div class="status" id="status">Select an environment, enter your username, and press Enter to authenticate</div>
     </div>
 
     <div id="mainUI" style="display: none;">
@@ -151,7 +159,8 @@
   </div>
 
   <script>
-    const orgInput = document.getElementById('org');
+    const environmentSelect = document.getElementById('environment');
+    const usernameInput = document.getElementById('username');
     const authBtn = document.getElementById('authBtn');
     const orgSection = document.getElementById('orgSection');
     const mainUI = document.getElementById('mainUI');
@@ -176,7 +185,41 @@
     let token = null;
     let jsonEditor = null;
     let currentItemData = null;
+    let currentEnvironment = null; // Selected environment key (e.g. "SALEP", "SALES3")
+    let currentOrg = null;         // Org/facility prefix derived server-side from the username
     const SAMPLE_ITEM_KEY = 'itemCopy_sampleItemId';
+
+    // Ensure username is always blank on load (security)
+    usernameInput.value = '';
+
+    // Populate the Environment dropdown from the server-side MANHATTAN_ENV config
+    async function loadEnvironments() {
+      try {
+        const res = await api('environments', {}, false);
+        if (res.success && Array.isArray(res.environments) && res.environments.length > 0) {
+          environmentSelect.innerHTML = res.environments
+            .map(key => `<option value="${key}">${key}</option>`)
+            .join('');
+        } else {
+          environmentSelect.innerHTML = '<option value="">No environments configured</option>';
+          logToConsole('No environments returned by /api/environments', 'error');
+        }
+      } catch (e) {
+        environmentSelect.innerHTML = '<option value="">Error loading environments</option>';
+        logToConsole(`Error loading environments: ${e.message}`, 'error');
+      }
+    }
+    loadEnvironments();
+
+    // Read a URL param by name, case-insensitively, accepting any of several aliases
+    // (e.g. getUrlParamCI(params, ['env', 'environment']) matches ENV, env, Environment, ...)
+    function getUrlParamCI(urlParams, candidateNames) {
+      const lowerCandidates = candidateNames.map(n => n.toLowerCase());
+      for (const [key, value] of urlParams.entries()) {
+        if (lowerCandidates.includes(key.toLowerCase())) return value;
+      }
+      return null;
+    }
 
     function status(msg, type) {
       statusEl.textContent = msg;
@@ -231,7 +274,7 @@
     }
 
     function getOrg() {
-      return orgInput.value.trim();
+      return currentOrg || '';
     }
 
     function profileIdFromOrg(org) {
@@ -569,31 +612,34 @@
     }
 
     async function authenticate() {
-      const org = getOrg();
+      const environment = environmentSelect.value.trim();
+      const username = usernameInput.value.trim();
       const start = Date.now();
       authBtn.disabled = true;
-      await trackEvent('auth_attempt', { org: org || 'unknown' });
-      if (!org) {
-        status('ORG required', 'error');
+      await trackEvent('auth_attempt', { environment: environment || 'unknown', username: username || 'unknown' });
+      if (!environment || !username) {
+        status('Environment and Username required', 'error');
         mainUI.style.display = 'none';
-        await trackEvent('auth_failed', { error: 'ORG required', auth_duration_ms: Date.now() - start });
+        await trackEvent('auth_failed', { error: 'Environment and Username required', auth_duration_ms: Date.now() - start });
         authBtn.disabled = false;
-        throw new Error('ORG required');
+        throw new Error('Environment and Username required');
       }
       status('Authenticating...');
-      const res = await api('auth', { org }, true);
+      const res = await api('auth', { environment, username }, true);
       if (!res.success) {
         status('Authentication failed', 'error');
         mainUI.style.display = 'none';
-        await trackEvent('auth_failed', { org, error: res.error, auth_duration_ms: Date.now() - start });
+        await trackEvent('auth_failed', { environment, username, error: res.error, auth_duration_ms: Date.now() - start });
         authBtn.disabled = false;
         throw new Error(res.error || 'Auth failed');
       }
       token = res.token;
+      currentEnvironment = environment;
+      currentOrg = res.org;
       status('Authenticated – ready!', 'success');
       mainUI.style.display = 'block';
       orgSection.style.display = 'none';
-      await trackEvent('auth_success', { org, auth_duration_ms: Date.now() - start, token_received: !!token });
+      await trackEvent('auth_success', { environment, username, org: currentOrg, auth_duration_ms: Date.now() - start, token_received: !!token });
       const saved = localStorage.getItem(SAMPLE_ITEM_KEY);
       if (saved) sampleItemIdInput.value = saved;
       authBtn.disabled = false;
@@ -621,7 +667,7 @@
       createItemStatus.textContent = '';
 
       try {
-        const res = await api('find_item', { org, token, itemId: sampleId }, false);
+        const res = await api('find_item', { environment: currentEnvironment, org, token, itemId: sampleId }, false);
         logToConsole('find_item: ' + JSON.stringify(res.success ? { itemId: res.itemId } : res), res.success ? 'success' : 'error');
 
         if (!res.success) {
@@ -699,7 +745,7 @@
       createItemBtn.disabled = true;
 
       try {
-        const check = await api('find_item', { org, token, itemId: newId }, false);
+        const check = await api('find_item', { environment: currentEnvironment, org, token, itemId: newId }, false);
         if (check.success && check.itemData) {
           createItemStatus.textContent = `Item already exists: ${newId}`;
           createItemStatus.className = 'text-danger';
@@ -711,7 +757,7 @@
         createItemStatus.textContent = 'Creating item...';
         logToConsole('create_item payload ready for ' + newId, 'info');
 
-        const res = await api('create_item', { org, token, itemData: itemJson }, false);
+        const res = await api('create_item', { environment: currentEnvironment, org, token, itemData: itemJson }, false);
         if (!res.success) {
           createItemStatus.textContent = res.error || 'Create failed';
           createItemStatus.className = 'text-danger';
@@ -744,7 +790,7 @@
         logToConsole('Auth error: ' + (err.message || err), 'error');
       });
     });
-    orgInput.addEventListener('keydown', e => {
+    const authOnEnter = e => {
       if (e.key === 'Enter') {
         authenticate().catch(err => {
           status(err.message || 'Authentication failed', 'error');
@@ -752,7 +798,9 @@
           logToConsole('Auth error: ' + (err.message || err), 'error');
         });
       }
-    });
+    };
+    usernameInput.addEventListener('keydown', authOnEnter);
+    environmentSelect.addEventListener('keydown', authOnEnter);
     loadItemBtn.addEventListener('click', loadItem);
     sampleItemIdInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -792,18 +840,32 @@
     clearConsoleBtn.addEventListener('click', () => { consoleOutput.innerHTML = ''; });
 
     window.addEventListener('load', async () => {
-      await trackEvent('app_opened', { has_url_params: window.location.search.length > 0 });
+      const params = new URLSearchParams(window.location.search);
+      // Param names are matched case-insensitively; Environment/Username each accept a
+      // short alias (env / user) so ENV, env, User, USERNAME, etc. all work.
+      const urlEnvironment = getUrlParamCI(params, ['env', 'environment']);
+      const urlUsername = getUrlParamCI(params, ['user', 'username']);
+      const urlItem = getUrlParamCI(params, ['itemid', 'item']);
+
+      await trackEvent('app_opened', {
+        has_url_params: window.location.search.length > 0,
+        url_environment: urlEnvironment || null,
+        url_username: urlUsername || null,
+        url_item_id: urlItem || null,
+      });
       try { initJsonEditor(); } catch (e) { logToConsole('Editor init: ' + e.message, 'error'); }
 
-      const params = new URLSearchParams(window.location.search);
       if (params.get('Console')?.toUpperCase() === 'Y' || params.get('console')?.toUpperCase() === 'Y') {
         document.getElementById('consoleSection').style.display = 'block';
       }
 
-      const urlOrg = params.get('Organization');
-      const urlItem = params.get('ItemId');
-      if (urlOrg?.trim()) {
-        orgInput.value = urlOrg.trim();
+      // Environment options load asynchronously; wait for them before selecting one
+      await loadEnvironments().catch(() => {});
+
+      if (urlEnvironment && urlEnvironment.trim() && urlUsername && urlUsername.trim()) {
+        environmentSelect.value = urlEnvironment.trim().toUpperCase();
+        usernameInput.value = urlUsername.trim();
+        logToConsole(`Environment/Username detected in URL: ${urlEnvironment.trim()}/${urlUsername.trim()}. Auto-authenticating...`, 'info');
         authenticate().then(() => {
           if (urlItem?.trim()) {
             sampleItemIdInput.value = urlItem.trim();
@@ -812,9 +874,10 @@
         }).catch(err => {
           status(err.message || 'Authentication failed', 'error');
           logToConsole('Auth error: ' + (err.message || err), 'error');
+          usernameInput.focus();
         });
       } else {
-        orgInput.focus();
+        usernameInput.focus();
       }
     });
   </script>
